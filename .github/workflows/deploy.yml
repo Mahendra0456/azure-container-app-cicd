@@ -1,44 +1,42 @@
-name: Deploy HTML to Azure Container Apps
+name: Deploy to AKS
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
 
 env:
-  IMAGE_NAME: html-app
-  REGISTRY: ${{ secrets.ACR_LOGIN_SERVER }}
+  IMAGE_NAME: web
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
+    - uses: actions/checkout@v4
 
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Login to Azure
-      uses: azure/login@v2
+    # Login to Azure
+    - uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # Use ACR login via Azure CLI (no password needed)
-    - name: Login to ACR
-      run: |
-        az acr login --name $(echo $REGISTRY | cut -d'.' -f1)
+    # Login to ACR
+    - run: az acr login --name ${{ secrets.ACR_NAME }}
 
-    - name: Build image
+    # Build & Push (amd64 enforced)
+    - name: Build and Push
       run: |
-        docker build --platform linux/amd64 -t $REGISTRY/$IMAGE_NAME:${{ github.sha }} .
+        IMAGE=${{ secrets.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        docker build --platform linux/amd64 -t $IMAGE .
+        docker push $IMAGE
+        echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
-    - name: Push image
-      run: |
-        docker push $REGISTRY/$IMAGE_NAME:${{ github.sha }}
+    # Set AKS context
+    - uses: azure/aks-set-context@v4
+      with:
+        resource-group: ${{ secrets.RESOURCE_GROUP }}
+        cluster-name: ${{ secrets.AKS_CLUSTER_NAME }}
 
-    - name: Deploy to Container Apps
+    # Deploy
+    - name: Deploy
       run: |
-        az containerapp update \
-          --name sixcontainerapp \
-          --resource-group my-RG \
-          --image $REGISTRY/$IMAGE_NAME:${{ github.sha }}
+        sed "s|IMAGE|$IMAGE|g" deployment.yaml | kubectl apply -f -
