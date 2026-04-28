@@ -40,5 +40,5 @@ jobs:
       run: |
         az containerapp update \
           --name sixcontainerapp \
-          --resource-group 6pm-rg \
+          --resource-group my-RG \
           --image $REGISTRY/$IMAGE_NAME:${{ github.sha }}
